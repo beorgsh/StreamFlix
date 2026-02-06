@@ -1,0 +1,8 @@
+{
+  "name": "StreamFlix",
+  "description": "A high-fidelity streaming application inspired by Netflix, powered by Consumet TMDB API, featuring real-time metadata, smooth animations, and high-performance video playback.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
