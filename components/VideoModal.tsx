@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { X, Play, Plus, ThumbsUp, ArrowLeft, AlertCircle, Loader2, ChevronDown, ImageOff } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Play, Plus, ThumbsUp, ArrowLeft, AlertCircle, Loader2, ChevronDown, ImageOff, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Movie, MediaInfo, StreamData } from '../types';
 import { fetchInfo, fetchStreamingLinks } from '../services/consumet';
@@ -16,11 +16,16 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
   const [loadingInfo, setLoadingInfo] = useState(true);
   const [loadingStream, setLoadingStream] = useState(false);
   const [streamData, setStreamData] = useState<StreamData | null>(null);
+  const [currentSourceIndex, setCurrentSourceIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [activeEpisodeId, setActiveEpisodeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
+  const [heroImageError, setHeroImageError] = useState(false);
+  const [seasonDropdownOpen, setSeasonDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Reset states when movie changes
   useEffect(() => {
     let mounted = true;
     const loadInfo = async () => {
@@ -28,7 +33,10 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
       setError(null);
       setPlaying(false);
       setStreamData(null);
-      setActiveEpisodeId(null); // Don't auto-select episode
+      setCurrentSourceIndex(0);
+      setActiveEpisodeId(null);
+      setHeroImageError(false);
+      setSeasonDropdownOpen(false);
       
       try {
         const data = await fetchInfo(movie.id, movie.type);
@@ -36,7 +44,6 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
           setInfo(data);
           
           if (data.episodes && data.episodes.length > 0) {
-            // Calculate unique seasons and sort them
             const seasons = [...new Set(data.episodes.map(e => e.season || 1))].sort((a,b) => a - b);
             const firstSeason = seasons[0];
             setSelectedSeason(firstSeason);
@@ -53,13 +60,22 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
     return () => { mounted = false; };
   }, [movie]);
 
+  // Handle click outside dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setSeasonDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handlePlay = async (episodeId?: string) => {
-    // Determine ID to play
     let idToPlay = episodeId;
     
     if (!info) return;
 
-    // If no explicit ID (e.g. clicking 'Play' on movie), grab the first episode
     if (!idToPlay && info.episodes && info.episodes.length > 0) {
         idToPlay = info.episodes[0].id;
     }
@@ -69,7 +85,6 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
       return;
     }
 
-    // Set active ID immediately for UI
     setActiveEpisodeId(idToPlay);
 
     try {
@@ -81,7 +96,8 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
       
       if (links.sources && links.sources.length > 0) {
         setStreamData(links);
-        setPlaying(true); // Triggers full screen overlay
+        setCurrentSourceIndex(0);
+        setPlaying(true);
       } else {
         setError("No stream sources found. Server might be busy.");
         setPlaying(false);
@@ -95,12 +111,23 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
     }
   };
 
+  const handlePlayerError = () => {
+    if (streamData && currentSourceIndex < streamData.sources.length - 1) {
+        console.warn(`Source ${currentSourceIndex} failed, switching to next source...`);
+        setCurrentSourceIndex(prev => prev + 1);
+    } else {
+        console.error("All sources failed.");
+        setPlaying(false);
+        setError("Unable to play video. Please try again later or select a different episode.");
+    }
+  };
+
   const closePlayer = () => {
     setPlaying(false);
     setStreamData(null);
+    setCurrentSourceIndex(0);
   };
 
-  // Derived state for Seasons and Filtered Episodes
   const uniqueSeasons = info?.episodes 
     ? Array.from(new Set(info.episodes.map(e => e.season || 1))).sort((a, b) => a - b)
     : [];
@@ -125,9 +152,8 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
           onClick={onClose}
         ></motion.div>
         
-        {/* Fullscreen Player Overlay */}
         <AnimatePresence>
-            {playing && streamData && (
+            {playing && streamData && streamData.sources[currentSourceIndex] && (
                 <motion.div 
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -137,11 +163,12 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
                 >
                      <div className="flex-1 relative bg-black">
                         <ArtPlayer 
-                            key={streamData.sources[0].url} 
-                            url={streamData.sources[0].url} 
+                            key={streamData.sources[currentSourceIndex].url} 
+                            url={streamData.sources[currentSourceIndex].url} 
                             poster={mainImage}
                             headers={streamData.headers}
                             subtitles={streamData.subtitles?.map(s => ({ url: s.url, label: s.lang }))}
+                            onError={handlePlayerError}
                             className="w-full h-full"
                         />
                          <button 
@@ -152,21 +179,10 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
                             <span className="font-medium">Back to Episodes</span>
                         </button>
                      </div>
-                     <div className="h-24 bg-zinc-900 border-t border-white/10 p-6 flex items-center justify-between">
-                         <div>
-                            <h3 className="text-white font-bold text-lg">{info?.title}</h3>
-                            {info?.episodes?.find(e => e.id === activeEpisodeId) && (
-                                <p className="text-zinc-400 text-sm">
-                                    S{selectedSeason}:E{info?.episodes?.find(e => e.id === activeEpisodeId)?.number} - {info?.episodes?.find(e => e.id === activeEpisodeId)?.title}
-                                </p>
-                            )}
-                         </div>
-                     </div>
                 </motion.div>
             )}
         </AnimatePresence>
 
-        {/* Modal Content */}
         <motion.div 
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -183,17 +199,18 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
                 <X className="w-6 h-6" />
             </button>
 
-            {/* Hero Section inside Modal */}
             <div className="relative aspect-video">
-                {mainImage ? (
+                {mainImage && !heroImageError ? (
                     <img 
                         src={mainImage} 
                         alt={movie.title} 
                         className="w-full h-full object-cover"
+                        onError={() => setHeroImageError(true)}
                     />
                 ) : (
-                    <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
-                        <ImageOff className="w-20 h-20 text-white/20" />
+                    <div className="w-full h-full bg-zinc-900 flex flex-col items-center justify-center border-b border-zinc-800">
+                        <ImageOff className="w-20 h-20 text-white/20 mb-4" />
+                        <span className="text-zinc-500 font-medium">Image unavailable</span>
                     </div>
                 )}
                 
@@ -229,35 +246,44 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
             </div>
 
             <div className="px-8 md:px-12 py-4 grid grid-cols-1 md:grid-cols-3 gap-8">
-                {/* Left Column: Metadata & Episodes */}
+                {/* Left Column */}
                 <div className="md:col-span-2 space-y-6">
                     {loadingInfo ? (
-                        <div className="animate-pulse space-y-6">
+                        /* DYNAMIC SKELETON LOADING */
+                        <div className="space-y-6">
+                            {/* Metadata Skeleton (Common) */}
                             <div className="flex items-center space-x-3">
-                                <div className="h-5 w-24 bg-zinc-700 rounded"></div>
-                                <div className="h-5 w-12 bg-zinc-700 rounded"></div>
-                                <div className="h-5 w-16 bg-zinc-700 rounded"></div>
+                                <div className="h-5 w-24 bg-zinc-700 rounded animate-pulse"></div>
+                                <div className="h-5 w-12 bg-zinc-700 rounded animate-pulse"></div>
+                                <div className="h-5 w-16 bg-zinc-700 rounded animate-pulse"></div>
                             </div>
                             <div className="space-y-2">
-                                <div className="h-4 w-full bg-zinc-700 rounded"></div>
-                                <div className="h-4 w-11/12 bg-zinc-700 rounded"></div>
-                                <div className="h-4 w-4/5 bg-zinc-700 rounded"></div>
+                                <div className="h-4 w-full bg-zinc-700 rounded animate-pulse"></div>
+                                <div className="h-4 w-11/12 bg-zinc-700 rounded animate-pulse"></div>
+                                <div className="h-4 w-4/5 bg-zinc-700 rounded animate-pulse"></div>
                             </div>
-                            <div className="pt-6">
-                                <div className="h-8 w-32 bg-zinc-700 rounded mb-4"></div>
-                                <div className="space-y-4">
-                                    {[1, 2, 3].map((i) => (
-                                        <div key={i} className="flex items-center p-4 border-b border-zinc-800/50">
-                                            <div className="w-6 h-6 bg-zinc-700 rounded-full mr-4 shrink-0"></div>
-                                            <div className="w-32 h-20 bg-zinc-700 rounded mr-4 shrink-0"></div>
-                                            <div className="flex-1 space-y-2">
-                                                <div className="h-4 w-1/3 bg-zinc-700 rounded"></div>
-                                                <div className="h-3 w-3/4 bg-zinc-700 rounded"></div>
+
+                            {/* TV Show Specific Skeleton */}
+                            {movie.type === 'tv' && (
+                                <div className="pt-6">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <div className="h-8 w-32 bg-zinc-700 rounded animate-pulse"></div>
+                                        <div className="h-8 w-24 bg-zinc-700 rounded animate-pulse"></div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {[1, 2, 3].map((i) => (
+                                            <div key={i} className="flex items-center p-4 border-b border-zinc-800/50">
+                                                <div className="w-6 h-6 bg-zinc-700 rounded-full mr-4 shrink-0 animate-pulse"></div>
+                                                <div className="w-32 h-20 bg-zinc-700 rounded mr-4 shrink-0 animate-pulse"></div>
+                                                <div className="flex-1 space-y-2">
+                                                    <div className="h-4 w-1/3 bg-zinc-700 rounded animate-pulse"></div>
+                                                    <div className="h-3 w-3/4 bg-zinc-700 rounded animate-pulse"></div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     ) : (
                         <motion.div 
@@ -278,21 +304,46 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
 
                             {showEpisodes && (
                                 <div className="pt-6">
-                                    <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center justify-between mb-4 relative z-10">
                                         <h3 className="text-xl font-bold">Episodes</h3>
+                                        
+                                        {/* Custom Season Dropdown */}
                                         {uniqueSeasons.length > 1 ? (
-                                            <div className="relative">
-                                                <select 
-                                                    value={selectedSeason}
-                                                    onChange={(e) => setSelectedSeason(Number(e.target.value))}
-                                                    className="appearance-none bg-[#242424] border border-[#404040] text-white py-1.5 pl-3 pr-8 rounded text-sm font-bold focus:outline-none cursor-pointer"
+                                            <div className="relative" ref={dropdownRef}>
+                                                <button 
+                                                    onClick={() => setSeasonDropdownOpen(!seasonDropdownOpen)}
+                                                    className="flex items-center space-x-2 bg-[#242424] border border-[#404040] hover:border-white text-white py-1.5 px-3 rounded text-sm font-bold transition-all"
                                                 >
-                                                    {uniqueSeasons.map(s => <option key={s} value={s}>Season {s}</option>)}
-                                                </select>
-                                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-white pointer-events-none" />
+                                                    <span>Season {selectedSeason}</span>
+                                                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${seasonDropdownOpen ? 'rotate-180' : ''}`} />
+                                                </button>
+                                                
+                                                <AnimatePresence>
+                                                    {seasonDropdownOpen && (
+                                                        <motion.div 
+                                                            initial={{ opacity: 0, y: -10 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            exit={{ opacity: 0, y: -10 }}
+                                                            className="absolute right-0 mt-2 w-40 bg-[#242424] border border-[#404040] rounded shadow-xl overflow-hidden z-20 max-h-60 overflow-y-auto custom-scrollbar"
+                                                        >
+                                                            {uniqueSeasons.map(s => (
+                                                                <button
+                                                                    key={s}
+                                                                    onClick={() => { setSelectedSeason(s); setSeasonDropdownOpen(false); }}
+                                                                    className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between hover:bg-white/10 transition-colors ${selectedSeason === s ? 'font-bold text-white bg-white/5' : 'text-zinc-400'}`}
+                                                                >
+                                                                    <span>Season {s}</span>
+                                                                    {selectedSeason === s && <Check className="w-3 h-3 text-white" />}
+                                                                </button>
+                                                            ))}
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
                                             </div>
                                         ) : (
-                                            <span className="text-zinc-400 text-sm font-bold">Season {selectedSeason}</span>
+                                            <span className="text-zinc-400 text-sm font-bold bg-[#242424] px-3 py-1.5 rounded border border-[#404040]">
+                                                Season {selectedSeason}
+                                            </span>
                                         )}
                                     </div>
 
@@ -363,10 +414,6 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
                              <div className="space-y-2">
                                 <div className="h-3 w-16 bg-zinc-700 rounded"></div>
                                 <div className="h-3 w-3/4 bg-zinc-700 rounded"></div>
-                             </div>
-                             <div className="space-y-2">
-                                <div className="h-3 w-16 bg-zinc-700 rounded"></div>
-                                <div className="h-3 w-1/2 bg-zinc-700 rounded"></div>
                              </div>
                         </div>
                     ) : (

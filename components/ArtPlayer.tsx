@@ -9,9 +9,10 @@ interface ArtPlayerProps {
   headers?: Record<string, string>;
   className?: string;
   poster?: string;
+  onError?: () => void;
 }
 
-const ArtPlayer: React.FC<ArtPlayerProps> = ({ url, subtitles = [], headers = {}, className = '', poster = '' }) => {
+const ArtPlayer: React.FC<ArtPlayerProps> = ({ url, subtitles = [], headers = {}, className = '', poster = '', onError }) => {
   const artRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<Artplayer | null>(null);
 
@@ -59,15 +60,22 @@ const ArtPlayer: React.FC<ArtPlayerProps> = ({ url, subtitles = [], headers = {}
               enableWorker: true,
               lowLatencyMode: true,
               backBufferLength: 90,
+              manifestLoadingTimeOut: 15000,
+              manifestLoadingMaxRetry: 3,
+              levelLoadingTimeOut: 15000,
+              levelLoadingMaxRetry: 3,
+              fragLoadingTimeOut: 15000,
+              fragLoadingMaxRetry: 3,
               xhrSetup: (xhr: XMLHttpRequest, url: string) => {
                 if (headers) {
                    Object.entries(headers).forEach(([key, value]) => {
-                     // Skip unsafe headers that browsers block
-                     if (key.toLowerCase() !== 'referer' && key.toLowerCase() !== 'user-agent') {
+                     // Skip unsafe headers that browsers block or that cause CORS issues
+                     const forbidden = ['referer', 'user-agent', 'host', 'date', 'connection', 'content-length', 'origin'];
+                     if (!forbidden.includes(key.toLowerCase())) {
                        try {
                          xhr.setRequestHeader(key, String(value));
                        } catch (e) {
-                         console.warn(`Failed to set header ${key}`, e);
+                         // ignore
                        }
                      }
                    });
@@ -79,21 +87,31 @@ const ArtPlayer: React.FC<ArtPlayerProps> = ({ url, subtitles = [], headers = {}
             hls.loadSource(url);
             hls.attachMedia(video);
             
+            let retryCount = 0;
+
             // Error handling for HLS
             hls.on(Hls.Events.ERROR, function (event, data) {
                 if (data.fatal) {
                   switch (data.type) {
                     case Hls.ErrorTypes.NETWORK_ERROR:
-                      console.error("HLS: fatal network error encountered, try to recover");
-                      hls.startLoad();
+                      retryCount++;
+                      if (retryCount >= 3) {
+                         console.error(`HLS: Fatal network error max retries (${retryCount}) reached. Giving up.`);
+                         hls.destroy();
+                         if (onError) onError();
+                      } else {
+                         console.warn(`HLS: Network error encountered, attempting recovery (${retryCount}/3)...`);
+                         hls.startLoad();
+                      }
                       break;
                     case Hls.ErrorTypes.MEDIA_ERROR:
-                      console.error("HLS: fatal media error encountered, try to recover");
+                      console.warn("HLS: Media error encountered, attempting recovery...");
                       hls.recoverMediaError();
                       break;
                     default:
-                      console.error("HLS: fatal error, cannot recover");
+                      console.error("HLS: Unrecoverable fatal error.");
                       hls.destroy();
+                      if (onError) onError();
                       break;
                   }
                 }
@@ -102,8 +120,13 @@ const ArtPlayer: React.FC<ArtPlayerProps> = ({ url, subtitles = [], headers = {}
             art.on('destroy', () => hls.destroy());
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = url;
+            // Native HLS error handling (Safari)
+            video.onerror = () => {
+                if (onError) onError();
+            };
           } else {
             art.notice.show = 'Does not support playback of this format';
+            if (onError) onError();
           }
         },
       },
@@ -137,6 +160,11 @@ const ArtPlayer: React.FC<ArtPlayerProps> = ({ url, subtitles = [], headers = {}
         art.subtitle.url = subtitles[0].url;
         art.subtitle.show = true;
     }
+
+    // Handle general ArtPlayer errors
+    art.on('error', () => {
+        if (onError) onError();
+    });
 
     playerRef.current = art;
 
