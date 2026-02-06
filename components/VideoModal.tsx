@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Play, Plus, ThumbsUp, Star, ArrowLeft, AlertCircle, Loader2, ChevronDown, ImageOff } from 'lucide-react';
+import { X, Play, Plus, ThumbsUp, ArrowLeft, AlertCircle, Loader2, ChevronDown, ImageOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Movie, MediaInfo, StreamData } from '../types';
 import { fetchInfo, fetchStreamingLinks } from '../services/consumet';
@@ -139,6 +139,7 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
                         <ArtPlayer 
                             key={streamData.sources[0].url} 
                             url={streamData.sources[0].url} 
+                            poster={mainImage}
                             headers={streamData.headers}
                             subtitles={streamData.subtitles?.map(s => ({ url: s.url, label: s.lang }))}
                             className="w-full h-full"
@@ -230,105 +231,164 @@ const VideoModal: React.FC<VideoModalProps> = ({ movie, onClose }) => {
             <div className="px-8 md:px-12 py-4 grid grid-cols-1 md:grid-cols-3 gap-8">
                 {/* Left Column: Metadata & Episodes */}
                 <div className="md:col-span-2 space-y-6">
-                    <div className="flex items-center space-x-3 text-sm font-bold">
-                        <span className="text-[#46d369]">98% Match</span>
-                        <span className="text-zinc-400">{info?.releaseDate?.split('-')[0]}</span>
-                        <span className="border border-zinc-500 px-1.5 py-0.5 text-xs rounded text-zinc-200 uppercase">{info?.type}</span>
-                        <span className="border border-zinc-500 px-1.5 py-0.5 text-xs rounded text-zinc-200">HD</span>
-                    </div>
-
-                    <p className="text-white text-sm md:text-base leading-relaxed">
-                        {info?.description || "Description unavailable."}
-                    </p>
-
-                    {showEpisodes && (
-                        <div className="pt-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-xl font-bold">Episodes</h3>
-                                {uniqueSeasons.length > 1 ? (
-                                    <div className="relative">
-                                        <select 
-                                            value={selectedSeason}
-                                            onChange={(e) => setSelectedSeason(Number(e.target.value))}
-                                            className="appearance-none bg-[#242424] border border-[#404040] text-white py-1.5 pl-3 pr-8 rounded text-sm font-bold focus:outline-none cursor-pointer"
-                                        >
-                                            {uniqueSeasons.map(s => <option key={s} value={s}>Season {s}</option>)}
-                                        </select>
-                                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-white pointer-events-none" />
-                                    </div>
-                                ) : (
-                                    <span className="text-zinc-400 text-sm font-bold">Season {selectedSeason}</span>
-                                )}
+                    {loadingInfo ? (
+                        <div className="animate-pulse space-y-6">
+                            <div className="flex items-center space-x-3">
+                                <div className="h-5 w-24 bg-zinc-700 rounded"></div>
+                                <div className="h-5 w-12 bg-zinc-700 rounded"></div>
+                                <div className="h-5 w-16 bg-zinc-700 rounded"></div>
                             </div>
-
-                            <div className="flex flex-col space-y-4">
-                                {filteredEpisodes?.map((ep) => {
-                                    const thumbnail = ep.image || mainImage;
-                                    const isActive = activeEpisodeId === ep.id;
-                                    
-                                    return (
-                                        <div 
-                                            key={ep.id}
-                                            onClick={() => handlePlay(ep.id)}
-                                            className={`group flex items-center p-4 rounded-lg cursor-pointer transition-colors border-b border-zinc-800 hover:bg-[#333] ${isActive ? 'bg-[#333]' : ''}`}
-                                        >
-                                            <div className="text-2xl text-zinc-500 font-bold w-6 mr-4 flex-shrink-0 text-center">
-                                                {ep.number}
-                                            </div>
-                                            
-                                            <div className="relative w-32 aspect-video rounded overflow-hidden flex-shrink-0 bg-zinc-800 mr-4">
-                                                {thumbnail ? (
-                                                    <img src={thumbnail} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="" />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center"><ImageOff className="w-6 h-6 text-zinc-600" /></div>
-                                                )}
-                                                <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <div className="bg-white/20 border border-white p-2 rounded-full backdrop-blur-sm">
-                                                        <Play className="w-4 h-4 fill-white text-white" />
-                                                    </div>
-                                                </div>
-                                                {isActive && loadingStream && (
-                                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                                                        <Loader2 className="w-6 h-6 animate-spin text-red-600" />
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex justify-between items-baseline mb-1">
-                                                    <h4 className="font-bold text-sm md:text-base text-zinc-100">{ep.title}</h4>
-                                                    <span className="text-xs text-zinc-400 ml-2">45m</span>
-                                                </div>
-                                                <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
-                                                    {ep.description || `Episode ${ep.number} of Season ${ep.season}`}
-                                                </p>
+                            <div className="space-y-2">
+                                <div className="h-4 w-full bg-zinc-700 rounded"></div>
+                                <div className="h-4 w-11/12 bg-zinc-700 rounded"></div>
+                                <div className="h-4 w-4/5 bg-zinc-700 rounded"></div>
+                            </div>
+                            <div className="pt-6">
+                                <div className="h-8 w-32 bg-zinc-700 rounded mb-4"></div>
+                                <div className="space-y-4">
+                                    {[1, 2, 3].map((i) => (
+                                        <div key={i} className="flex items-center p-4 border-b border-zinc-800/50">
+                                            <div className="w-6 h-6 bg-zinc-700 rounded-full mr-4 shrink-0"></div>
+                                            <div className="w-32 h-20 bg-zinc-700 rounded mr-4 shrink-0"></div>
+                                            <div className="flex-1 space-y-2">
+                                                <div className="h-4 w-1/3 bg-zinc-700 rounded"></div>
+                                                <div className="h-3 w-3/4 bg-zinc-700 rounded"></div>
                                             </div>
                                         </div>
-                                    );
-                                })}
-                                
-                                {(!filteredEpisodes || filteredEpisodes.length === 0) && (
-                                    <div className="text-center py-10 text-zinc-500 text-sm">No episodes found.</div>
-                                )}
+                                    ))}
+                                </div>
                             </div>
                         </div>
+                    ) : (
+                        <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.5 }}
+                        >
+                            <div className="flex items-center space-x-3 text-sm font-bold">
+                                <span className="text-[#46d369]">98% Match</span>
+                                <span className="text-zinc-400">{info?.releaseDate?.split('-')[0]}</span>
+                                <span className="border border-zinc-500 px-1.5 py-0.5 text-xs rounded text-zinc-200 uppercase">{info?.type}</span>
+                                <span className="border border-zinc-500 px-1.5 py-0.5 text-xs rounded text-zinc-200">HD</span>
+                            </div>
+
+                            <p className="text-white text-sm md:text-base leading-relaxed mt-4">
+                                {info?.description || "Description unavailable."}
+                            </p>
+
+                            {showEpisodes && (
+                                <div className="pt-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-xl font-bold">Episodes</h3>
+                                        {uniqueSeasons.length > 1 ? (
+                                            <div className="relative">
+                                                <select 
+                                                    value={selectedSeason}
+                                                    onChange={(e) => setSelectedSeason(Number(e.target.value))}
+                                                    className="appearance-none bg-[#242424] border border-[#404040] text-white py-1.5 pl-3 pr-8 rounded text-sm font-bold focus:outline-none cursor-pointer"
+                                                >
+                                                    {uniqueSeasons.map(s => <option key={s} value={s}>Season {s}</option>)}
+                                                </select>
+                                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-white pointer-events-none" />
+                                            </div>
+                                        ) : (
+                                            <span className="text-zinc-400 text-sm font-bold">Season {selectedSeason}</span>
+                                        )}
+                                    </div>
+
+                                    <div className="flex flex-col space-y-4">
+                                        {filteredEpisodes?.map((ep) => {
+                                            const thumbnail = ep.image || mainImage;
+                                            const isActive = activeEpisodeId === ep.id;
+                                            
+                                            return (
+                                                <div 
+                                                    key={ep.id}
+                                                    onClick={() => handlePlay(ep.id)}
+                                                    className={`group flex items-center p-4 rounded-lg cursor-pointer transition-colors border-b border-zinc-800 hover:bg-[#333] ${isActive ? 'bg-[#333]' : ''}`}
+                                                >
+                                                    <div className="text-2xl text-zinc-500 font-bold w-6 mr-4 flex-shrink-0 text-center">
+                                                        {ep.number}
+                                                    </div>
+                                                    
+                                                    <div className="relative w-32 aspect-video rounded overflow-hidden flex-shrink-0 bg-zinc-800 mr-4">
+                                                        {thumbnail ? (
+                                                            <img src={thumbnail} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="" />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center"><ImageOff className="w-6 h-6 text-zinc-600" /></div>
+                                                        )}
+                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <div className="bg-white/20 border border-white p-2 rounded-full backdrop-blur-sm">
+                                                                <Play className="w-4 h-4 fill-white text-white" />
+                                                            </div>
+                                                        </div>
+                                                        {isActive && loadingStream && (
+                                                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                                                <Loader2 className="w-6 h-6 animate-spin text-red-600" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex justify-between items-baseline mb-1">
+                                                            <h4 className="font-bold text-sm md:text-base text-zinc-100">{ep.title}</h4>
+                                                            <span className="text-xs text-zinc-400 ml-2">45m</span>
+                                                        </div>
+                                                        <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                                                            {ep.description || `Episode ${ep.number} of Season ${ep.season}`}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        
+                                        {(!filteredEpisodes || filteredEpisodes.length === 0) && (
+                                            <div className="text-center py-10 text-zinc-500 text-sm">No episodes found.</div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </motion.div>
                     )}
                 </div>
 
                 {/* Right Column: Extra Details */}
                 <div className="text-sm space-y-6">
-                    <div>
-                        <span className="text-zinc-500">Cast: </span>
-                        <span className="text-zinc-200 hover:underline cursor-pointer">Unavailable</span>
-                    </div>
-                    <div>
-                        <span className="text-zinc-500">Genres: </span>
-                        <span className="text-zinc-200">{info?.genres?.map(g => g).join(', ') || 'Various'}</span>
-                    </div>
-                    <div>
-                        <span className="text-zinc-500">This show is: </span>
-                        <span className="text-zinc-200">Exciting, Suspenseful</span>
-                    </div>
+                    {loadingInfo ? (
+                        <div className="animate-pulse space-y-6">
+                             <div className="space-y-2">
+                                <div className="h-3 w-16 bg-zinc-700 rounded"></div>
+                                <div className="h-3 w-full bg-zinc-700 rounded"></div>
+                             </div>
+                             <div className="space-y-2">
+                                <div className="h-3 w-16 bg-zinc-700 rounded"></div>
+                                <div className="h-3 w-3/4 bg-zinc-700 rounded"></div>
+                             </div>
+                             <div className="space-y-2">
+                                <div className="h-3 w-16 bg-zinc-700 rounded"></div>
+                                <div className="h-3 w-1/2 bg-zinc-700 rounded"></div>
+                             </div>
+                        </div>
+                    ) : (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.5, delay: 0.2 }}
+                        >
+                            <div className="mb-4">
+                                <span className="text-zinc-500 block mb-1">Cast:</span>
+                                <span className="text-zinc-200">Unavailable</span>
+                            </div>
+                            <div className="mb-4">
+                                <span className="text-zinc-500 block mb-1">Genres:</span>
+                                <span className="text-zinc-200 leading-relaxed">{info?.genres?.map(g => g).join(', ') || 'Various'}</span>
+                            </div>
+                            <div className="mb-4">
+                                <span className="text-zinc-500 block mb-1">This show is:</span>
+                                <span className="text-zinc-200">Exciting, Suspenseful</span>
+                            </div>
+                        </motion.div>
+                    )}
                 </div>
             </div>
           </div>
